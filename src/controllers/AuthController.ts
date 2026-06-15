@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 
 import * as authService from '../services/AuthService'
+import { success } from "zod";
 
 
 export const register=async(req:Request, res:Response,next:NextFunction)=>{
@@ -12,3 +13,16 @@ export const register=async(req:Request, res:Response,next:NextFunction)=>{
         next(err)
     }
 };
+
+
+export const login=async(req:Request,res:Response,next:NextFunction)=>{
+    try{
+    const result=await authService.login(req.body);
+    console.log("result ",result);
+    
+    res.status(200).json({success:true, data:result})
+    }catch(err:any){
+        next(err);
+    }
+
+}
