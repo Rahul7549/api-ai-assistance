@@ -104,7 +104,7 @@ export const refresh=async (refreshToken:string)=>{
 
     await refreshTokenRepository.revoke(stored.id);
 
-    const user=await refreshTokenRepository.findById(stored.id);
+    const user=await refreshTokenRepository.findById(stored.userId);
 
     if(!user || !user.isActive){
         throw new UnauthorizedError("Invalid refresh token");
