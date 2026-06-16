@@ -32,3 +32,10 @@ export const refresh = async (req: Request, res: Response, next: NextFunction) =
         next(err);
     }
 }
+
+export const logout = async (req: Request, res: Response) => {
+  await authService.logout(req.body.refreshToken);
+  res.status(200).json({ success: true, message: "Logged out successfully" });
+};
+
+

@@ -112,3 +112,16 @@ export const refresh=async (refreshToken:string)=>{
     return issueToken(user);
 
 }
+
+
+export const logout = async (refreshToken: string) => {
+  const hashed = hashToken(refreshToken);
+  const stored = await refreshTokenRepository.findByToken(hashed);
+
+  // Only revoke if it exists and isn't already revoked.
+  if (stored && !stored.revoked) {
+    await refreshTokenRepository.revoke(stored.id);
+  }
+
+  // Note: we intentionally do NOT throw if the token is missing/invalid.
+};
