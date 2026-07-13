@@ -24,7 +24,7 @@ export const register = async (dto: RegisterDto) => {
         firstName: dto.firstName,
         lastName: dto.lastName,
         email: dto.email,
-        passwordHash
+        passwordHash,
     })
 
     const { passwordHash: _, ...safeUser } = user;

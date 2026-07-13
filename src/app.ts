@@ -1,7 +1,9 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
-import authRoutes from "./routes/authRoutes"
+import authRoutes from "./routes/authRoutes";
+import assistantRoutes from "./routes/assistantRoutes";
+import conversationRoutes from "./routes/conversationRoutes";
 import { errorHandler } from "./middleware/errorHandler";
 
 
@@ -11,6 +13,8 @@ app.use(cors());
 app.use(helmet());
 app.use(express.json());
 app.use("/api/auth",authRoutes);
+app.use("/api/assistants", assistantRoutes);
+app.use("/api/conversations", conversationRoutes);
 
 
 app.get('/health',(_,res)=>{
