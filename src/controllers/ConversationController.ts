@@ -57,3 +57,27 @@ export const remove = async (req: Request<{ id: string }>, res: Response, next: 
     next(err);
   }
 };
+
+export const editMessage = async (req: Request<{ id: string; messageId: string }>, res: Response, next: NextFunction) => {
+  try {
+    const message = await conversationService.editMessage(
+      req.user!.userid,
+      req.params.id,
+      req.params.messageId,
+      req.body.content,
+      req.body.regenerate
+    );
+    res.status(200).json({ success: true, data: message });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const removeMessage = async (req: Request<{ id: string; messageId: string }>, res: Response, next: NextFunction) => {
+  try {
+    await conversationService.removeMessage(req.user!.userid, req.params.id, req.params.messageId);
+    res.status(200).json({ success: true, message: "Message deleted" });
+  } catch (err) {
+    next(err);
+  }
+};
