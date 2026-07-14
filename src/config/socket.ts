@@ -29,8 +29,9 @@ export const initSocket = (httpServer: HttpServer) => {
 
     let currentAbort: AbortController | null = null;
 
-    socket.on("warm_model", () => {
-      warmModel().catch(() => {});
+    socket.on("warm_model", async () => {
+      await warmModel().catch(() => {});
+      socket.emit("model_ready");
     });
 
     socket.on("user_message", async (data: { conversationId: string; content: string; mode?: string }) => {
