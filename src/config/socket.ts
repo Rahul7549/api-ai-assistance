@@ -9,6 +9,10 @@ export const initSocket = (httpServer: HttpServer) => {
     cors: { origin: "*", methods: ["GET", "POST"] },
   });
 
+  // Fix 5: Pre-warm model on server boot + keepalive every 4 min
+  warmModel().catch(() => {});
+  setInterval(() => warmModel().catch(() => {}), 4 * 60 * 1000);
+
   // JWT authentication middleware for Socket.IO
   io.use((socket, next) => {
     const token = socket.handshake.auth.token;
@@ -40,13 +44,39 @@ export const initSocket = (httpServer: HttpServer) => {
 
       currentAbort = new AbortController();
 
+      // Fix 4: Token batching — collect tokens for 80ms then flush
+      let tokenBuf: string[] = [];
+      let flushTimer: ReturnType<typeof setTimeout> | null = null;
+      const BATCH_MS = 80;
+
+      const flushTokens = () => {
+        if (tokenBuf.length) {
+          socket.emit("ai_token", { token: tokenBuf.join("") });
+          tokenBuf = [];
+        }
+        flushTimer = null;
+      };
+
       await streamChat(
         userId,
         conversationId,
         content,
-        (token) => socket.emit("ai_token", { token }),
-        (fullResponse) => socket.emit("ai_done", { conversationId, content: fullResponse }),
-        (error) => socket.emit("ai_error", { message: error }),
+        (token) => {
+          tokenBuf.push(token);
+          if (!flushTimer) {
+            flushTimer = setTimeout(flushTokens, BATCH_MS);
+          }
+        },
+        (fullResponse) => {
+          if (flushTimer) clearTimeout(flushTimer);
+          flushTokens();
+          socket.emit("ai_done", { conversationId, content: fullResponse });
+        },
+        (error) => {
+          if (flushTimer) clearTimeout(flushTimer);
+          flushTokens();
+          socket.emit("ai_error", { message: error });
+        },
         currentAbort.signal,
         mode
       );

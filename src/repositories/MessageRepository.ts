@@ -30,6 +30,15 @@ export const remove = (id: string) => {
   return prisma.message.delete({ where: { id } });
 };
 
+export const findRecentByConversationId = async (conversationId: string, limit = 6) => {
+  const rows = await prisma.message.findMany({
+    where: { conversationId },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+  });
+  return rows.reverse();
+};
+
 export const deleteAfter = async (conversationId: string, messageId: string) => {
   const message = await prisma.message.findUnique({ where: { id: messageId } });
   if (!message) return;

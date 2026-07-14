@@ -25,13 +25,23 @@ function buildSystemPrompt(name: string, personality: string): string {
 ${traits}`;
 }
 
+// Fix 1: Singleton voice model — reused across warm and inference
+let voiceModel: ChatOllama | null = null;
+
+function getVoiceModel(): ChatOllama {
+  if (!voiceModel) {
+    voiceModel = new ChatOllama({
+      baseUrl: process.env.OLLAMA_BASE_URL || "http://localhost:11434",
+      model: process.env.OLLAMA_MODEL || "llama3",
+      temperature: 0.7,
+      numPredict: 120,
+    });
+  }
+  return voiceModel;
+}
+
 export const warmModel = async () => {
-  const model = new ChatOllama({
-    baseUrl: process.env.OLLAMA_BASE_URL || "http://localhost:11434",
-    model: process.env.OLLAMA_MODEL || "llama3",
-    numPredict: 1,
-  });
-  await model.invoke("hi");
+  await getVoiceModel().invoke("hi");
 };
 
 export const streamChat = async (
@@ -45,20 +55,24 @@ export const streamChat = async (
   mode?: string
 ) => {
   const isVoice = mode === "voice";
+  const t0 = Date.now();
 
   try {
     const conversation = await conversationRepo.findById(conversationId);
     if (!conversation) { onError("Conversation not found"); return; }
 
-    const assistant = await assistantRepo.findById(conversation.assistantId);
+    // Fix 2: Parallelize independent DB calls
+    const [assistant] = await Promise.all([
+      assistantRepo.findById(conversation.assistantId),
+      messageRepo.create({ conversationId, role: "USER", content: userMessage }),
+    ]);
     if (!assistant || assistant.userId !== userId) { onError("Access denied"); return; }
 
-    // Save user message
-    await messageRepo.create({ conversationId, role: "USER", content: userMessage });
-
-    // Voice mode: shorter history for faster context processing
+    // Fix 3: Voice uses recent history (desc + reverse), not oldest-first
     const historyLimit = isVoice ? 6 : 20;
-    const history = await messageRepo.findByConversationId(conversationId, historyLimit);
+    const history = isVoice
+      ? await messageRepo.findRecentByConversationId(conversationId, historyLimit)
+      : await messageRepo.findByConversationId(conversationId, historyLimit);
     let systemPrompt = buildSystemPrompt(assistant.name, assistant.personality);
 
     if (isVoice) {
@@ -75,33 +89,34 @@ export const streamChat = async (
       new HumanMessage(userMessage),
     ];
 
-    // Voice mode: use a token-limited model for faster responses
-    const model: ChatOllama = isVoice
-      ? new ChatOllama({
-          baseUrl: process.env.OLLAMA_BASE_URL || "http://localhost:11434",
-          model: process.env.OLLAMA_MODEL || "llama3",
-          temperature: 0.7,
-          numPredict: 120,
-        })
-      : createChatModel();
+    const model = isVoice ? getVoiceModel() : createChatModel();
     const stream = await model.stream(messages);
 
+    // Fix 9: Metrics instrumentation
     let fullResponse = "";
+    let tokenCount = 0;
     for await (const chunk of stream) {
       if (signal?.aborted) break;
       const token = typeof chunk.content === "string" ? chunk.content : "";
       if (token) {
+        if (isVoice && tokenCount === 0) {
+          console.log(`[voice-metrics] TTFT=${Date.now() - t0}ms`);
+        }
+        tokenCount++;
         fullResponse += token;
         onToken(token);
       }
     }
 
-    // Save assistant response (even partial if cancelled)
+    if (isVoice) {
+      const elapsed = Date.now() - t0;
+      console.log(`[voice-metrics] total=${elapsed}ms tokens=${tokenCount} tps=${(tokenCount / (elapsed / 1000)).toFixed(1)}`);
+    }
+
     if (fullResponse) {
       await messageRepo.create({ conversationId, role: "ASSISTANT", content: fullResponse });
     }
 
-    // Update conversation title from first user message
     if (history.length <= 1) {
       const title = userMessage.length > 50 ? userMessage.slice(0, 50) + "..." : userMessage;
       await conversationRepo.updateTitle(conversationId, title);
