@@ -1,7 +1,7 @@
 import { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
 import jwt from "jsonwebtoken";
-import { streamChat } from "../services/ChatService";
+import { streamChat, warmModel } from "../services/ChatService";
 import { AuthPayload } from "../middleware/authenticate";
 
 export const initSocket = (httpServer: HttpServer) => {
@@ -29,8 +29,12 @@ export const initSocket = (httpServer: HttpServer) => {
 
     let currentAbort: AbortController | null = null;
 
-    socket.on("user_message", async (data: { conversationId: string; content: string }) => {
-      const { conversationId, content } = data;
+    socket.on("warm_model", () => {
+      warmModel().catch(() => {});
+    });
+
+    socket.on("user_message", async (data: { conversationId: string; content: string; mode?: string }) => {
+      const { conversationId, content, mode } = data;
       if (!conversationId || !content) return;
 
       currentAbort = new AbortController();
@@ -42,7 +46,8 @@ export const initSocket = (httpServer: HttpServer) => {
         (token) => socket.emit("ai_token", { token }),
         (fullResponse) => socket.emit("ai_done", { conversationId, content: fullResponse }),
         (error) => socket.emit("ai_error", { message: error }),
-        currentAbort.signal
+        currentAbort.signal,
+        mode
       );
 
       currentAbort = null;

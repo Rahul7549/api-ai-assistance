@@ -1,3 +1,4 @@
+import { ChatOllama } from "@langchain/ollama";
 import { createChatModel } from "../config/ai";
 import { SystemMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
 import * as messageRepo from "../repositories/MessageRepository";
@@ -24,6 +25,15 @@ function buildSystemPrompt(name: string, personality: string): string {
 ${traits}`;
 }
 
+export const warmModel = async () => {
+  const model = new ChatOllama({
+    baseUrl: process.env.OLLAMA_BASE_URL || "http://localhost:11434",
+    model: process.env.OLLAMA_MODEL || "llama3",
+    numPredict: 1,
+  });
+  await model.invoke("hi");
+};
+
 export const streamChat = async (
   userId: string,
   conversationId: string,
@@ -31,8 +41,11 @@ export const streamChat = async (
   onToken: (token: string) => void,
   onDone: (fullResponse: string) => void,
   onError: (error: string) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  mode?: string
 ) => {
+  const isVoice = mode === "voice";
+
   try {
     const conversation = await conversationRepo.findById(conversationId);
     if (!conversation) { onError("Conversation not found"); return; }
@@ -43,9 +56,14 @@ export const streamChat = async (
     // Save user message
     await messageRepo.create({ conversationId, role: "USER", content: userMessage });
 
-    // Build message history
-    const history = await messageRepo.findByConversationId(conversationId, 20);
-    const systemPrompt = buildSystemPrompt(assistant.name, assistant.personality);
+    // Voice mode: shorter history for faster context processing
+    const historyLimit = isVoice ? 6 : 20;
+    const history = await messageRepo.findByConversationId(conversationId, historyLimit);
+    let systemPrompt = buildSystemPrompt(assistant.name, assistant.personality);
+
+    if (isVoice) {
+      systemPrompt += "\n\nYou are in a live voice conversation. Keep responses brief — 1 to 3 sentences max. Be direct and conversational. Do not use markdown, bullet points, or formatting.";
+    }
 
     const messages = [
       new SystemMessage(systemPrompt),
@@ -57,8 +75,15 @@ export const streamChat = async (
       new HumanMessage(userMessage),
     ];
 
-    // Stream from Ollama via LangChain
-    const model = createChatModel();
+    // Voice mode: use a token-limited model for faster responses
+    const model: ChatOllama = isVoice
+      ? new ChatOllama({
+          baseUrl: process.env.OLLAMA_BASE_URL || "http://localhost:11434",
+          model: process.env.OLLAMA_MODEL || "llama3",
+          temperature: 0.7,
+          numPredict: 120,
+        })
+      : createChatModel();
     const stream = await model.stream(messages);
 
     let fullResponse = "";
