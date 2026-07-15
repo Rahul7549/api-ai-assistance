@@ -1,7 +1,7 @@
 import { ChatOllama } from "@langchain/ollama";
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.1";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.1:8b";
 
 export const createChatModel = () => {
   return new ChatOllama({

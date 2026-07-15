@@ -44,7 +44,7 @@ function getVoiceModel(): ChatOllama {
   if (!voiceModel) {
     voiceModel = new ChatOllama({
       baseUrl: process.env.OLLAMA_BASE_URL || "http://localhost:11434",
-      model: process.env.OLLAMA_MODEL || "llama3.1",
+      model: process.env.OLLAMA_MODEL || "llama3.1:8b",
       temperature: 0.7,
       numPredict: 150,
     });
