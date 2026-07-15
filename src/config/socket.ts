@@ -2,6 +2,7 @@ import { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
 import jwt from "jsonwebtoken";
 import { streamChat, warmModel } from "../services/ChatService";
+import { detectPdfIntent, generatePdf } from "../services/PdfService";
 import { AuthPayload } from "../middleware/authenticate";
 
 export const initSocket = (httpServer: HttpServer) => {
@@ -57,6 +58,8 @@ export const initSocket = (httpServer: HttpServer) => {
         flushTimer = null;
       };
 
+      const wantsPdf = detectPdfIntent(content);
+
       await streamChat(
         userId,
         conversationId,
@@ -71,6 +74,12 @@ export const initSocket = (httpServer: HttpServer) => {
           if (flushTimer) clearTimeout(flushTimer);
           flushTokens();
           socket.emit("ai_done", { conversationId, content: fullResponse });
+
+          if (wantsPdf && fullResponse.trim().length > 20) {
+            generatePdf(fullResponse, content)
+              .then((pdf) => socket.emit("pdf_ready", pdf))
+              .catch((err) => console.error("[pdf] generation failed:", err));
+          }
         },
         (error) => {
           if (flushTimer) clearTimeout(flushTimer);

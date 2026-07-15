@@ -8,5 +8,6 @@ export const createChatModel = () => {
     baseUrl: OLLAMA_BASE_URL,
     model: OLLAMA_MODEL,
     temperature: 0.7,
+    numPredict: 1024,
   });
 };
