@@ -1,7 +1,7 @@
 import { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
 import jwt from "jsonwebtoken";
-import { streamChat, warmModel } from "../services/ChatService";
+import { streamChat } from "../services/ChatService";
 import { detectPdfIntent, generatePdf } from "../services/PdfService";
 import { AuthPayload } from "../middleware/authenticate";
 
@@ -10,9 +10,6 @@ export const initSocket = (httpServer: HttpServer) => {
     cors: { origin: "*", methods: ["GET", "POST"] },
   });
 
-  // Fix 5: Pre-warm model on server boot + keepalive every 4 min
-  warmModel().catch(() => {});
-  setInterval(() => warmModel().catch(() => {}), 4 * 60 * 1000);
 
   // JWT authentication middleware for Socket.IO
   io.use((socket, next) => {
@@ -34,8 +31,7 @@ export const initSocket = (httpServer: HttpServer) => {
 
     let currentAbort: AbortController | null = null;
 
-    socket.on("warm_model", async () => {
-      await warmModel().catch(() => {});
+    socket.on("warm_model", () => {
       socket.emit("model_ready");
     });
 

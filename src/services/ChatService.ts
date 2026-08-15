@@ -1,6 +1,5 @@
-import { ChatOllama } from "@langchain/ollama";
-import { createChatModel } from "../config/ai";
-import { SystemMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
+import { ai, GEMINI_MODEL } from "../config/ai";
+import type { Content } from "@google/genai";
 import * as messageRepo from "../repositories/MessageRepository";
 import * as conversationRepo from "../repositories/ConversationRepository";
 import * as assistantRepo from "../repositories/AssistantRepository";
@@ -22,7 +21,7 @@ function buildSystemPrompt(name: string, personality: string): string {
 - You were created by the team behind this platform.
 - If asked who you are, say: "I'm ${name}, your AI assistant."
 - If asked who made you, say: "I was created by the team behind this platform."
-- Never mention LLaMA, GPT, Meta, OpenAI, Google, or any underlying model.
+- Never mention Gemini, GPT, Meta, OpenAI, Google, or any underlying model.
 
 ## Personality
 ${traits}
@@ -37,24 +36,7 @@ ${traits}
 - Never repeat the user's question back to them. Never start with "Great question!".`;
 }
 
-// Fix 1: Singleton voice model — reused across warm and inference
-let voiceModel: ChatOllama | null = null;
-
-function getVoiceModel(): ChatOllama {
-  if (!voiceModel) {
-    voiceModel = new ChatOllama({
-      baseUrl: process.env.OLLAMA_BASE_URL || "http://localhost:11434",
-      model: process.env.OLLAMA_MODEL || "llama3.1:8b",
-      temperature: 0.7,
-      numPredict: 150,
-    });
-  }
-  return voiceModel;
-}
-
-export const warmModel = async () => {
-  await getVoiceModel().invoke("hi");
-};
+export const warmModel = async () => {};
 
 export const streamChat = async (
   userId: string,
@@ -73,14 +55,12 @@ export const streamChat = async (
     const conversation = await conversationRepo.findById(conversationId);
     if (!conversation) { onError("Conversation not found"); return; }
 
-    // Fix 2: Parallelize independent DB calls
     const [assistant] = await Promise.all([
       assistantRepo.findById(conversation.assistantId),
       messageRepo.create({ conversationId, role: "USER", content: userMessage }),
     ]);
     if (!assistant || assistant.userId !== userId) { onError("Access denied"); return; }
 
-    // Fix 3: Voice uses recent history (desc + reverse), not oldest-first
     const historyLimit = isVoice ? 6 : 20;
     const history = isVoice
       ? await messageRepo.findRecentByConversationId(conversationId, historyLimit)
@@ -91,25 +71,29 @@ export const streamChat = async (
       systemPrompt += "\n\nYou are in a live voice conversation. Keep responses brief — 1 to 3 sentences max. Be direct and conversational. Do not use markdown, bullet points, or formatting.";
     }
 
-    const messages = [
-      new SystemMessage(systemPrompt),
-      ...history.slice(0, -1).map((msg) =>
-        msg.role === "USER"
-          ? new HumanMessage(msg.content)
-          : new AIMessage(msg.content)
-      ),
-      new HumanMessage(userMessage),
+    const contents: Content[] = [
+      ...history.slice(0, -1).map((msg): Content => ({
+        role: msg.role === "USER" ? "user" : "model",
+        parts: [{ text: msg.content }],
+      })),
+      { role: "user", parts: [{ text: userMessage }] },
     ];
 
-    const model = isVoice ? getVoiceModel() : createChatModel();
-    const stream = await model.stream(messages);
+    const response = await ai.models.generateContentStream({
+      model: GEMINI_MODEL,
+      contents,
+      config: {
+        systemInstruction: systemPrompt,
+        temperature: 0.7,
+        maxOutputTokens: isVoice ? 200 : 2048,
+      },
+    });
 
-    // Fix 9: Metrics instrumentation
     let fullResponse = "";
     let tokenCount = 0;
-    for await (const chunk of stream) {
+    for await (const chunk of response) {
       if (signal?.aborted) break;
-      const token = typeof chunk.content === "string" ? chunk.content : "";
+      const token = chunk.text || "";
       if (token) {
         if (isVoice && tokenCount === 0) {
           console.log(`[voice-metrics] TTFT=${Date.now() - t0}ms`);

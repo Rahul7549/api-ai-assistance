@@ -1,13 +1,9 @@
-import { ChatOllama } from "@langchain/ollama";
+import { GoogleGenAI } from "@google/genai";
 
-const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.1:8b";
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+if (!GOOGLE_API_KEY) {
+  throw new Error("GOOGLE_API_KEY is not set in environment");
+}
 
-export const createChatModel = () => {
-  return new ChatOllama({
-    baseUrl: OLLAMA_BASE_URL,
-    model: OLLAMA_MODEL,
-    temperature: 0.7,
-    numPredict: 1024,
-  });
-};
+export const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
