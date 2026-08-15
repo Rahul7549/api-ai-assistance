@@ -1,7 +1,8 @@
 import { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
 import jwt from "jsonwebtoken";
-import { streamChat, warmModel } from "../services/ChatService";
+import { streamChat } from "../services/ChatService";
+import { detectPdfIntent, generatePdf } from "../services/PdfService";
 import { AuthPayload } from "../middleware/authenticate";
 
 export const initSocket = (httpServer: HttpServer) => {
@@ -9,9 +10,6 @@ export const initSocket = (httpServer: HttpServer) => {
     cors: { origin: "*", methods: ["GET", "POST"] },
   });
 
-  // Fix 5: Pre-warm model on server boot + keepalive every 4 min
-  warmModel().catch(() => {});
-  setInterval(() => warmModel().catch(() => {}), 4 * 60 * 1000);
 
   // JWT authentication middleware for Socket.IO
   io.use((socket, next) => {
@@ -33,8 +31,7 @@ export const initSocket = (httpServer: HttpServer) => {
 
     let currentAbort: AbortController | null = null;
 
-    socket.on("warm_model", async () => {
-      await warmModel().catch(() => {});
+    socket.on("warm_model", () => {
       socket.emit("model_ready");
     });
 
@@ -57,6 +54,8 @@ export const initSocket = (httpServer: HttpServer) => {
         flushTimer = null;
       };
 
+      const wantsPdf = detectPdfIntent(content);
+
       await streamChat(
         userId,
         conversationId,
@@ -71,6 +70,12 @@ export const initSocket = (httpServer: HttpServer) => {
           if (flushTimer) clearTimeout(flushTimer);
           flushTokens();
           socket.emit("ai_done", { conversationId, content: fullResponse });
+
+          if (wantsPdf && fullResponse.trim().length > 20) {
+            generatePdf(fullResponse, content)
+              .then((pdf) => socket.emit("pdf_ready", pdf))
+              .catch((err) => console.error("[pdf] generation failed:", err));
+          }
         },
         (error) => {
           if (flushTimer) clearTimeout(flushTimer);
