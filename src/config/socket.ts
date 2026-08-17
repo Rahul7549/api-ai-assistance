@@ -8,6 +8,13 @@ import * as messageRepo from "../repositories/MessageRepository";
 import * as conversationRepo from "../repositories/ConversationRepository";
 import * as fileRepo from "../repositories/FileRepository";
 import { indexDocument, retrieveContext } from "../services/RagService";
+import {
+  detectSearchIntent,
+  extractSearchQuery,
+  search as webSearch,
+  formatSearchResults,
+  isSearchAvailable,
+} from "../services/WebSearchService";
 import fs from "fs";
 import path from "path";
 import { UPLOAD_DIR } from "../services/FileService";
@@ -120,6 +127,17 @@ export const initSocket = (httpServer: HttpServer) => {
         if (ragResult) {
           contextPrefix = ragResult.contextPrefix;
           sourceFiles = ragResult.sourceFiles;
+        }
+      }
+
+      // Web search — only if no RAG context was found and not voice mode
+      if (!contextPrefix && mode !== "voice" && detectSearchIntent(content) && isSearchAvailable()) {
+        socket.emit("ai_searching");
+        const searchQuery = extractSearchQuery(content);
+        const searchResults = await webSearch(searchQuery);
+        const searchContext = formatSearchResults(searchResults);
+        if (searchContext) {
+          contextPrefix = searchContext;
         }
       }
 
