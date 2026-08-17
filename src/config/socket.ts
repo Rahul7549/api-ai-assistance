@@ -54,7 +54,7 @@ export const initSocket = (httpServer: HttpServer) => {
       const { conversationId, content, mode, fileIds } = data;
       if (!conversationId || !content) return;
 
-      if (detectImageIntent(content)) {
+      if (!fileIds?.length && detectImageIntent(content)) {
         try {
           await messageRepo.create({ conversationId, role: "USER", content });
 
@@ -87,8 +87,16 @@ export const initSocket = (httpServer: HttpServer) => {
         const files = await Promise.all(fileIds.map((id) => fileRepo.findById(id)));
         const validFiles = files.filter(Boolean) as NonNullable<typeof files[number]>[];
 
-        const imageFiles = validFiles.filter((f) => f.mimeType.startsWith("image/"));
-        const docFiles = validFiles.filter((f) => !f.mimeType.startsWith("image/"));
+        const ownedFiles = validFiles.filter((f) => f.userId === userId);
+
+        for (const f of ownedFiles) {
+          if (!f.conversationId) {
+            await fileRepo.updateConversationId(f.id, conversationId);
+          }
+        }
+
+        const imageFiles = ownedFiles.filter((f) => f.mimeType.startsWith("image/"));
+        const docFiles = ownedFiles.filter((f) => !f.mimeType.startsWith("image/"));
 
         if (imageFiles.length) {
           imageParts = imageFiles.map((f) => {

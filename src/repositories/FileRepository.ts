@@ -29,3 +29,10 @@ export const findByIdWithChunks = (id: string) => {
     include: { chunks: { orderBy: { chunkIndex: "asc" } } },
   });
 };
+
+export async function updateConversationId(fileId: string, conversationId: string) {
+  return prisma.file.update({
+    where: { id: fileId },
+    data: { conversationId },
+  });
+}
