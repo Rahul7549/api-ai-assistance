@@ -46,7 +46,9 @@ export const streamChat = async (
   onDone: (fullResponse: string) => void,
   onError: (error: string) => void,
   signal?: AbortSignal,
-  mode?: string
+  mode?: string,
+  contextPrefix?: string,
+  imageParts?: Array<{ inlineData: { data: string; mimeType: string } }>
 ) => {
   const isVoice = mode === "voice";
   const t0 = Date.now();
@@ -67,8 +69,19 @@ export const streamChat = async (
       : await messageRepo.findByConversationId(conversationId, historyLimit);
     let systemPrompt = buildSystemPrompt(assistant.name, assistant.personality);
 
+    if (contextPrefix) {
+      systemPrompt += "\n\n" + contextPrefix;
+    }
+
     if (isVoice) {
       systemPrompt += "\n\nYou are in a live voice conversation. Keep responses brief — 1 to 3 sentences max. Be direct and conversational. Do not use markdown, bullet points, or formatting.";
+    }
+
+    const userParts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [
+      { text: userMessage },
+    ];
+    if (imageParts?.length) {
+      userParts.push(...imageParts);
     }
 
     const contents: Content[] = [
@@ -76,7 +89,7 @@ export const streamChat = async (
         role: msg.role === "USER" ? "user" : "model",
         parts: [{ text: msg.content }],
       })),
-      { role: "user", parts: [{ text: userMessage }] },
+      { role: "user", parts: userParts },
     ];
 
     const response = await ai.models.generateContentStream({

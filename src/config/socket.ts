@@ -3,6 +3,13 @@ import { Server, Socket } from "socket.io";
 import jwt from "jsonwebtoken";
 import { streamChat } from "../services/ChatService";
 import { detectPdfIntent, generatePdf } from "../services/PdfService";
+import { detectImageIntent, generateImage } from "../services/ImageService";
+import * as messageRepo from "../repositories/MessageRepository";
+import * as conversationRepo from "../repositories/ConversationRepository";
+import * as fileRepo from "../repositories/FileRepository";
+import fs from "fs";
+import path from "path";
+import { UPLOAD_DIR } from "../services/FileService";
 import { AuthPayload } from "../middleware/authenticate";
 
 export const initSocket = (httpServer: HttpServer) => {
@@ -35,13 +42,68 @@ export const initSocket = (httpServer: HttpServer) => {
       socket.emit("model_ready");
     });
 
-    socket.on("user_message", async (data: { conversationId: string; content: string; mode?: string }) => {
-      const { conversationId, content, mode } = data;
+    socket.on("user_message", async (data: { conversationId: string; content: string; mode?: string; fileIds?: string[] }) => {
+      const { conversationId, content, mode, fileIds } = data;
       if (!conversationId || !content) return;
+
+      if (detectImageIntent(content)) {
+        try {
+          await messageRepo.create({ conversationId, role: "USER", content });
+
+          socket.emit("ai_token", { token: "Generating image for you..." });
+
+          const result = await generateImage(content);
+          const markdownImg = `![Generated Image](${result.url})`;
+
+          await messageRepo.create({ conversationId, role: "ASSISTANT", content: markdownImg });
+
+          const history = await messageRepo.findByConversationId(conversationId, 2);
+          if (history.length <= 2) {
+            const title = content.length > 50 ? content.slice(0, 50) + "..." : content;
+            await conversationRepo.updateTitle(conversationId, title);
+          }
+
+          socket.emit("ai_image", { url: result.url, conversationId });
+          socket.emit("ai_done", { conversationId });
+        } catch (err: any) {
+          console.error("[image] generation failed:", err);
+          socket.emit("ai_error", { message: err.message || "Image generation failed" });
+        }
+        return;
+      }
+
+      let contextPrefix: string | undefined;
+      let imageParts: Array<{ inlineData: { data: string; mimeType: string } }> | undefined;
+
+      if (fileIds?.length) {
+        const files = await Promise.all(fileIds.map((id) => fileRepo.findById(id)));
+        const validFiles = files.filter(Boolean) as NonNullable<typeof files[number]>[];
+
+        const imageFiles = validFiles.filter((f) => f.mimeType.startsWith("image/"));
+        const docFiles = validFiles.filter((f) => !f.mimeType.startsWith("image/"));
+
+        if (imageFiles.length) {
+          imageParts = imageFiles.map((f) => {
+            const filePath = path.join(UPLOAD_DIR, f.fileName);
+            const data = fs.readFileSync(filePath).toString("base64");
+            return { inlineData: { data, mimeType: f.mimeType } };
+          });
+        }
+
+        if (docFiles.length) {
+          const docTexts = docFiles
+            .filter((f) => f.extractedText)
+            .map((f) => `### ${f.originalName}\n${f.extractedText}`)
+            .join("\n\n---\n\n");
+
+          if (docTexts) {
+            contextPrefix = `## Attached Document Content\n\n${docTexts}\n\nUse the document content above to answer the user's question when relevant.`;
+          }
+        }
+      }
 
       currentAbort = new AbortController();
 
-      // Fix 4: Token batching — collect tokens for 80ms then flush
       let tokenBuf: string[] = [];
       let flushTimer: ReturnType<typeof setTimeout> | null = null;
       const BATCH_MS = 80;
@@ -83,7 +145,9 @@ export const initSocket = (httpServer: HttpServer) => {
           socket.emit("ai_error", { message: error });
         },
         currentAbort.signal,
-        mode
+        mode,
+        contextPrefix,
+        imageParts
       );
 
       currentAbort = null;
