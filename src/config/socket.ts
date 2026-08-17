@@ -107,13 +107,21 @@ export const initSocket = (httpServer: HttpServer) => {
         }
 
         if (docFiles.length) {
-          const docTexts = docFiles
-            .filter((f) => f.extractedText)
-            .map((f) => `### ${f.originalName}\n${f.extractedText}`)
-            .join("\n\n---\n\n");
+          const docsWithText = docFiles.filter((f) => f.extractedText);
+          const docsWithoutText = docFiles.filter((f) => !f.extractedText);
 
-          if (docTexts) {
+          if (docsWithText.length) {
+            const docTexts = docsWithText
+              .map((f) => `### ${f.originalName}\n${f.extractedText}`)
+              .join("\n\n---\n\n");
             contextPrefix = `## Attached Document Content\n\n${docTexts}\n\nUse the document content above to answer the user's question when relevant.`;
+          } else {
+            const fileList = docFiles.map((f) => `- ${f.originalName} (${f.mimeType}, ${f.size} bytes)`).join("\n");
+            contextPrefix = `## Attached Files\n\nThe user attached the following files:\n${fileList}\n\nText extraction was not possible for these files. Acknowledge the files and let the user know you received them but couldn't read their content.`;
+          }
+
+          for (const f of docsWithoutText) {
+            socket.emit("indexing_complete", { fileId: f.id, fileName: f.originalName });
           }
         }
 
