@@ -7,6 +7,7 @@ import { detectImageIntent, generateImage } from "../services/ImageService";
 import * as messageRepo from "../repositories/MessageRepository";
 import * as conversationRepo from "../repositories/ConversationRepository";
 import * as fileRepo from "../repositories/FileRepository";
+import { indexDocument, retrieveContext } from "../services/RagService";
 import fs from "fs";
 import path from "path";
 import { UPLOAD_DIR } from "../services/FileService";
@@ -100,6 +101,26 @@ export const initSocket = (httpServer: HttpServer) => {
             contextPrefix = `## Attached Document Content\n\n${docTexts}\n\nUse the document content above to answer the user's question when relevant.`;
           }
         }
+
+        for (const f of docFiles) {
+          if (f.extractedText) {
+            try {
+              await indexDocument(f.id);
+              socket.emit("indexing_complete", { fileId: f.id, fileName: f.originalName });
+            } catch (err) {
+              console.error(`[RAG] indexing failed for ${f.originalName}:`, err);
+            }
+          }
+        }
+      }
+
+      let sourceFiles: string[] | undefined;
+      if (!contextPrefix) {
+        const ragResult = await retrieveContext(conversationId, content);
+        if (ragResult) {
+          contextPrefix = ragResult.contextPrefix;
+          sourceFiles = ragResult.sourceFiles;
+        }
       }
 
       currentAbort = new AbortController();
@@ -131,7 +152,7 @@ export const initSocket = (httpServer: HttpServer) => {
         (fullResponse) => {
           if (flushTimer) clearTimeout(flushTimer);
           flushTokens();
-          socket.emit("ai_done", { conversationId, content: fullResponse });
+          socket.emit("ai_done", { conversationId, content: fullResponse, sourceFiles });
 
           if (wantsPdf && fullResponse.trim().length > 20) {
             generatePdf(fullResponse, content)
