@@ -48,7 +48,8 @@ export const streamChat = async (
   signal?: AbortSignal,
   mode?: string,
   contextPrefix?: string,
-  imageParts?: Array<{ inlineData: { data: string; mimeType: string } }>
+  imageParts?: Array<{ inlineData: { data: string; mimeType: string } }>,
+  fileAttachments?: Array<{ name: string; mimeType: string; size: number }>
 ) => {
   const isVoice = mode === "voice";
   const t0 = Date.now();
@@ -59,7 +60,7 @@ export const streamChat = async (
 
     const [assistant] = await Promise.all([
       assistantRepo.findById(conversation.assistantId),
-      messageRepo.create({ conversationId, role: "USER", content: userMessage }),
+      messageRepo.create({ conversationId, role: "USER", content: userMessage, fileAttachments: fileAttachments || undefined }),
     ]);
     if (!assistant || assistant.userId !== userId) { onError("Access denied"); return; }
 

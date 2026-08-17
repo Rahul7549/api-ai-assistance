@@ -82,12 +82,19 @@ export const initSocket = (httpServer: HttpServer) => {
 
       let contextPrefix: string | undefined;
       let imageParts: Array<{ inlineData: { data: string; mimeType: string } }> | undefined;
+      let fileAttachments: Array<{ name: string; mimeType: string; size: number }> | undefined;
 
       if (fileIds?.length) {
         const files = await Promise.all(fileIds.map((id) => fileRepo.findById(id)));
         const validFiles = files.filter(Boolean) as NonNullable<typeof files[number]>[];
 
         const ownedFiles = validFiles.filter((f) => f.userId === userId);
+
+        fileAttachments = ownedFiles.map((f) => ({
+          name: f.originalName,
+          mimeType: f.mimeType,
+          size: f.size,
+        }));
 
         for (const f of ownedFiles) {
           if (!f.conversationId) {
@@ -202,7 +209,8 @@ export const initSocket = (httpServer: HttpServer) => {
         currentAbort.signal,
         mode,
         contextPrefix,
-        imageParts
+        imageParts,
+        fileAttachments
       );
 
       currentAbort = null;

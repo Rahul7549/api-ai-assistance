@@ -5,6 +5,7 @@ export const create = (data: {
   conversationId: string;
   role: MessageRole;
   content: string;
+  fileAttachments?: Array<{ name: string; mimeType: string; size: number }>;
 }) => {
   return prisma.message.create({ data });
 };
