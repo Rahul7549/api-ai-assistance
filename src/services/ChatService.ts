@@ -12,9 +12,96 @@ const PERSONALITY_TRAITS: Record<string, string> = {
   CREATIVE: "Your communication style is imaginative and expressive. Offer original perspectives and creative solutions. Use vivid examples and analogies to explain concepts.",
 };
 
+function getSeasonForMonth(month: number): string {
+  if (month >= 3 && month <= 5) return "Spring";
+  if (month >= 6 && month <= 8) return "Summer / Monsoon season (in South Asia)";
+  if (month >= 9 && month <= 11) return "Autumn";
+  return "Winter";
+}
+
+function getIndianFinancialYear(now: Date): string {
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  return m >= 3 ? `FY ${y}-${y + 1}` : `FY ${y - 1}-${y}`;
+}
+
+function getQuarter(month: number): string {
+  if (month <= 2) return "Q1";
+  if (month <= 5) return "Q2";
+  if (month <= 8) return "Q3";
+  return "Q4";
+}
+
+function getDayOfYear(now: Date): number {
+  const start = new Date(now.getFullYear(), 0, 0);
+  const diff = now.getTime() - start.getTime();
+  return Math.floor(diff / (1000 * 60 * 60 * 24));
+}
+
+function getDaysRemaining(now: Date): number {
+  const endOfYear = new Date(now.getFullYear(), 11, 31);
+  const diff = endOfYear.getTime() - now.getTime();
+  return Math.floor(diff / (1000 * 60 * 60 * 24));
+}
+
+function getWeekNumber(now: Date): number {
+  const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+}
+
+function getTimeOfDay(hour: number): string {
+  if (hour < 5) return "night";
+  if (hour < 12) return "morning";
+  if (hour < 17) return "afternoon";
+  if (hour < 21) return "evening";
+  return "night";
+}
+
 function buildSystemPrompt(name: string, personality: string): string {
   const traits = PERSONALITY_TRAITS[personality] || PERSONALITY_TRAITS.FRIENDLY;
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const dayOfMonth = now.getDate();
+  const hour = now.getHours();
+
+  const fullDate = now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true, timeZoneName: "short" });
+  const isWeekend = now.getDay() === 0 || now.getDay() === 6;
+  const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
   return `You are ${name}, an intelligent AI assistant.
+
+## Current Date & Time Context
+- **Today**: ${fullDate}
+- **Current time**: ${timeStr} (${getTimeOfDay(hour)})
+- **Year**: ${year}${isLeapYear ? " (leap year)" : ""}
+- **Calendar quarter**: ${getQuarter(month)} | **Week**: ${getWeekNumber(now)} of 52
+- **Day of year**: ${getDayOfYear(now)} of ${isLeapYear ? 366 : 365} | **Days remaining in year**: ${getDaysRemaining(now)}
+- **Day of month**: ${dayOfMonth} of ${daysInMonth}
+- **Weekend/Weekday**: ${isWeekend ? "Weekend" : "Weekday"}
+- **Season**: ${getSeasonForMonth(month)}
+- **Indian Financial Year**: ${getIndianFinancialYear(now)}
+
+You ALWAYS know the current date and time. Never say "I don't have access to real-time information" or "I cannot determine the current date" when answering questions about:
+- **Date & time**: current time, today's date, day of the week, month, year, what time it is
+- **Relative dates**: tomorrow, yesterday, next Monday, last Friday, a week from now, 30 days ago
+- **Holidays & festivals**: national holidays, religious festivals, regional celebrations, international observance days — use your knowledge combined with today's date
+- **Regional events**: state-specific holidays (Karnataka Rajyotsava, Maharashtra Day, Onam, Pongal, etc.), local celebrations
+- **Countdowns**: days until Christmas, New Year, Diwali, Eid, Independence Day, birthdays, deadlines
+- **Age calculations**: compute age from birth year/date using today's date
+- **Zodiac & astrology**: determine zodiac sign from birth date, current zodiac season, Chinese zodiac year
+- **Seasons & weather context**: current season, monsoon period, summer/winter, harvest season
+- **Calendar math**: working days this month, weekends remaining, days in current month, leap year status
+- **Financial/fiscal**: current fiscal year, fiscal quarter, tax season, financial year-end dates
+- **Academic calendar**: approximate school terms, exam seasons, vacation periods based on region
+- **Historical timelines**: years since an event, how long ago something happened
+
+For truly real-time data you cannot know (live stock prices, live sports scores, breaking news, current weather conditions, live exchange rates), acknowledge this honestly but still provide what you DO know based on the date — for example, you can say what event is scheduled even if you cannot confirm the live result.
 
 ## Identity
 - Your name is "${name}". Use this name when referring to yourself.
